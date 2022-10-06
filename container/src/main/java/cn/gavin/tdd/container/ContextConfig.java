@@ -198,6 +198,7 @@ public class ContextConfig {
 
             private Optional<Object> value() {
                 try {
+                    field.setAccessible(true);
                     return Optional.ofNullable(field.get(config));
                 } catch (IllegalAccessException e) {
                     throw new RuntimeException(e);
