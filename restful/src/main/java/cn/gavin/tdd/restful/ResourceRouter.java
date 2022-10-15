@@ -40,17 +40,33 @@ class DefaultResourceRouter implements ResourceRouter {
     public OutboundResponse dispatch(HttpServletRequest request, ResourceContext resourceContext) {
         String path = request.getServletPath();
         UriInfoBuilder uri = runtime.createUriInfoBuilder(request);
-        Optional<RootResource> matched = rootResources.stream().map(resource -> new Result(resource.getUriTemplate().match(path), resource))
-                .filter(result -> result.matched.isPresent()).map(Result::resource)
-                .findFirst();
 
-        Optional<ResourceMethod> method = matched.flatMap(resource -> resource.match(path, request.getMethod(),
-                Collections.list(request.getHeaders(HttpHeaders.ACCEPT)).toArray(String[]::new), uri));
+        Optional<ResourceMethod> method = rootResources.stream().map(resource -> match(path, resource))
+                .filter(Result::isMatched).sorted().findFirst().flatMap(result -> result.findResourceMethod(request, uri));
 
-        GenericEntity<?> entity = method.map(m -> m.call(resourceContext, uri)).get();
-        return (OutboundResponse) Response.ok(entity).build();
+        if (method.isEmpty()) return (OutboundResponse) Response.status(Response.Status.NOT_FOUND).build();
+
+        return (OutboundResponse) method.map(m -> m.call(resourceContext, uri)).map(entity -> Response.ok(entity).build())
+                .orElseGet(() -> Response.noContent().build());
     }
 
-    record Result(Optional<UriTemplate.MatchResult> matched, RootResource resource) {
+    private static Result match(String path, RootResource resource) {
+        return new Result(resource.getUriTemplate().match(path), resource);
+    }
+
+    record Result(Optional<UriTemplate.MatchResult> matched, RootResource resource) implements Comparable<Result> {
+        private boolean isMatched() {
+            return this.matched.isPresent();
+        }
+
+        @Override
+        public int compareTo(Result o) {
+            return matched.flatMap(x -> o.matched.map(x::compareTo)).orElse(0);
+        }
+
+        private Optional<ResourceMethod> findResourceMethod(HttpServletRequest request, UriInfoBuilder uri) {
+            return matched.flatMap(result -> resource.match(result.getRemaining(), request.getMethod(),
+                    Collections.list(request.getHeaders(HttpHeaders.ACCEPT)).toArray(String[]::new), uri));
+        }
     }
 }
