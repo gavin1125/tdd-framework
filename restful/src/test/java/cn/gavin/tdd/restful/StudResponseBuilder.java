@@ -15,7 +15,6 @@ import static org.mockito.Mockito.when;
 public class StudResponseBuilder extends Response.ResponseBuilder {
     private GenericEntity entity;
     private int status;
-
     @Override
     public Response build() {
         OutboundResponse response = Mockito.mock(OutboundResponse.class);
