@@ -10,6 +10,7 @@ import jakarta.ws.rs.core.Response;
 
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 interface ResourceRouter {
@@ -19,21 +20,24 @@ interface ResourceRouter {
         Optional<ResourceMethod> match(UriTemplate.MatchResult result, String method, String[] mediaTypes, UriInfoBuilder builder);
     }
 
-    interface RootResource extends Resource {
-        UriTemplate getUriTemplate();
+    interface RootResource extends Resource, UriHandler {
     }
 
-    interface ResourceMethod {
-        GenericEntity<?> call(ResourceContext resourceContext, UriInfoBuilder builder);
-
+    interface ResourceMethod extends UriHandler {
         String getHttpMethod();
 
+        GenericEntity<?> call(ResourceContext resourceContext, UriInfoBuilder builder);
+    }
+
+    interface SubResourceLocator extends UriHandler {
+    }
+
+    interface UriHandler {
         UriTemplate getUriTemplate();
     }
 }
 
 class DefaultResourceRouter implements ResourceRouter {
-
     private Runtime runtime;
     private List<RootResource> rootResources;
 
@@ -78,26 +82,43 @@ class DefaultResourceRouter implements ResourceRouter {
 }
 
 class RootResourceClass implements ResourceRouter.RootResource {
-
     private PathTemplate uriTemplate;
     private Class<?> resourceClass;
-    private Map<String, List<ResourceRouter.ResourceMethod>> resourceMethods;
+    private final ResourceMethods resourceMethods;
 
     public RootResourceClass(Class<?> resourceClass) {
         this.resourceClass = resourceClass;
         this.uriTemplate = new PathTemplate(resourceClass.getAnnotation(Path.class).value());
-
-        resourceMethods = Arrays.stream(resourceClass.getMethods()).filter(m -> Arrays.stream(m.getAnnotations())
-                        .anyMatch(a -> a.annotationType().isAnnotationPresent(HttpMethod.class)))
-                .map(DefaultResourceMethod::new)
-                .collect(Collectors.groupingBy(ResourceRouter.ResourceMethod::getHttpMethod));
+        this.resourceMethods = new ResourceMethods(resourceClass.getMethods());
     }
 
     @Override
     public Optional<ResourceRouter.ResourceMethod> match(UriTemplate.MatchResult result, String method, String[] mediaTypes, UriInfoBuilder builder) {
         String remaining = Optional.ofNullable(result.getRemaining()).orElse("");
-        return Optional.ofNullable(resourceMethods.get(method)).flatMap(methods->methods.stream().map(m -> match(remaining, m)).filter(Result::isMatched).sorted()
-                .findFirst().map(Result::resourceMethod));
+        return resourceMethods.findResourceMethods(remaining, method);
+    }
+
+    @Override
+    public UriTemplate getUriTemplate() {
+        return uriTemplate;
+    }
+}
+
+class DefaultResourceMethod implements ResourceRouter.ResourceMethod {
+    private String httpMethod;
+    private UriTemplate uriTemplate;
+    private Method method;
+
+    public DefaultResourceMethod(Method method) {
+        this.method = method;
+        this.uriTemplate = new PathTemplate(Optional.ofNullable(method.getAnnotation(Path.class)).map(a -> a.value()).orElse(""));
+        this.httpMethod = Arrays.stream(method.getAnnotations()).filter(a -> a.annotationType().isAnnotationPresent(HttpMethod.class))
+                .findFirst().get().annotationType().getAnnotation(HttpMethod.class).value();
+    }
+
+    @Override
+    public String getHttpMethod() {
+        return httpMethod;
     }
 
     @Override
@@ -105,48 +126,99 @@ class RootResourceClass implements ResourceRouter.RootResource {
         return uriTemplate;
     }
 
-    private Result match(String path, ResourceRouter.ResourceMethod method) {
-        return new Result(method.getUriTemplate().match(path), method);
+    @Override
+    public GenericEntity<?> call(ResourceContext resourceContext, UriInfoBuilder builder) {
+        return null;
     }
 
-    record Result(Optional<UriTemplate.MatchResult> matched,
-                  ResourceRouter.ResourceMethod resourceMethod) implements Comparable<Result> {
+    @Override
+    public String toString() {
+        return method.getDeclaringClass().getSimpleName() + "." + method.getName();
+    }
+}
 
-        public boolean isMatched() {
-            return matched.map(r -> r.getRemaining() == null).orElse(false);
-        }
+class SubResource implements ResourceRouter.Resource {
+    private Object subResource;
+    private ResourceMethods resourceMethods;
 
-        @Override
-        public int compareTo(Result o) {
-            return matched.flatMap(x -> o.matched.map(x::compareTo)).orElse(0);
-        }
+    public SubResource(Object subResource) {
+        this.subResource = subResource;
+        this.resourceMethods = new ResourceMethods(subResource.getClass().getMethods());
     }
 
-    static class DefaultResourceMethod implements ResourceRouter.ResourceMethod {
-        private String httpMethod;
-        private UriTemplate uriTemplate;
+    @Override
+    public Optional<ResourceRouter.ResourceMethod> match(UriTemplate.MatchResult result, String method, String[] mediaTypes, UriInfoBuilder builder) {
+        String remaining = Optional.ofNullable(result.getRemaining()).orElse("");
+        return resourceMethods.findResourceMethods(remaining, method);
+    }
+}
+
+class ResourceMethods {
+    private Map<String, List<ResourceRouter.ResourceMethod>> resourceMethods;
+
+    public ResourceMethods(Method[] methods) {
+        this.resourceMethods = getResourceMethods(methods);
+    }
+
+    private static Map<String, List<ResourceRouter.ResourceMethod>> getResourceMethods(Method[] methods) {
+        return Arrays.stream(methods).filter(m -> Arrays.stream(m.getAnnotations())
+                        .anyMatch(a -> a.annotationType().isAnnotationPresent(HttpMethod.class)))
+                .map(DefaultResourceMethod::new)
+                .collect(Collectors.groupingBy(ResourceRouter.ResourceMethod::getHttpMethod));
+    }
+
+    public Optional<ResourceRouter.ResourceMethod> findResourceMethods(String path, String method) {
+        return Optional.ofNullable(resourceMethods.get(method)).flatMap(methods -> Result.match(path, methods, r -> r.getRemaining() == null));
+    }
+}
+
+record Result<T extends ResourceRouter.UriHandler>
+        (Optional<UriTemplate.MatchResult> matched,
+         T handler, Function<UriTemplate.MatchResult, Boolean> matchFunction) implements Comparable<Result<T>> {
+
+    public static <T extends ResourceRouter.UriHandler> Optional<T> match(String path, List<T> handlers, Function<UriTemplate.MatchResult, Boolean> matchFunction) {
+        return handlers.stream().map(m -> new Result<>(m.getUriTemplate().match(path), m, matchFunction))
+                .filter(Result::isMatched).sorted().findFirst().map(Result::handler);
+    }
+
+    public static <T extends ResourceRouter.UriHandler> Optional<T> match(String path, List<T> handlers) {
+        return match(path, handlers, r -> true);
+    }
+
+    public boolean isMatched() {
+        return matched.map(matchFunction::apply).orElse(false);
+    }
+
+    @Override
+    public int compareTo(Result<T> o) {
+        return matched.flatMap(x -> o.matched.map(x::compareTo)).orElse(0);
+    }
+}
+
+class SubResourceLocators {
+    private final List<ResourceRouter.SubResourceLocator> subResourceLocators;
+
+    public SubResourceLocators(Method[] methods) {
+        subResourceLocators = Arrays.stream(methods).filter(m -> m.isAnnotationPresent(Path.class) && Arrays.stream(m.getAnnotations()).noneMatch(a -> a.annotationType().isAnnotationPresent(HttpMethod.class)))
+                .map(m -> (ResourceRouter.SubResourceLocator) new DefaultSubResourceLocator(m)).toList();
+    }
+
+    public Optional<ResourceRouter.SubResourceLocator> findSubResource(String path) {
+        return Result.match(path, subResourceLocators);
+    }
+
+    static class DefaultSubResourceLocator implements ResourceRouter.SubResourceLocator {
+        private PathTemplate uriTemplate;
         private Method method;
 
-        public DefaultResourceMethod(Method method) {
+        public DefaultSubResourceLocator(Method method) {
             this.method = method;
-            this.uriTemplate = new PathTemplate(Optional.ofNullable(method.getAnnotation(Path.class)).map(a -> a.value()).orElse(""));
-            this.httpMethod = Arrays.stream(method.getAnnotations()).filter(a -> a.annotationType().isAnnotationPresent(HttpMethod.class))
-                    .findFirst().get().annotationType().getAnnotation(HttpMethod.class).value();
-        }
-
-        @Override
-        public String getHttpMethod() {
-            return httpMethod;
+            this.uriTemplate = new PathTemplate(method.getAnnotation(Path.class).value());
         }
 
         @Override
         public UriTemplate getUriTemplate() {
             return uriTemplate;
-        }
-
-        @Override
-        public GenericEntity<?> call(ResourceContext resourceContext, UriInfoBuilder builder) {
-            return null;
         }
 
         @Override
