@@ -109,17 +109,10 @@ public class ResourceDispatcherTest {
         assertEquals(204, response.getStatus());
     }
 
-    private ResourceRouter.RootResource rootResource(UriTemplate uriTemplate) {
-        ResourceRouter.RootResource unMatched = Mockito.mock(ResourceRouter.RootResource.class);
-        when(unMatched.getUriTemplate()).thenReturn(uriTemplate);
-        when(unMatched.match(any(), eq("GET"), eq(new String[]{MediaType.WILDCARD}), eq(builder))).thenReturn(Optional.empty());
-        return unMatched;
-    }
-
     private ResourceRouter.RootResource rootResource(StudUriTemplate stub) {
         ResourceRouter.RootResource unMatched = Mockito.mock(ResourceRouter.RootResource.class);
         when(unMatched.getUriTemplate()).thenReturn(stub.uriTemplate);
-        when(unMatched.match(same(stub.result), eq("GET"), eq(new String[]{MediaType.WILDCARD}), eq(builder))).thenReturn(Optional.empty());
+        when(unMatched.match(same(stub.result), eq("GET"), eq(new String[]{MediaType.WILDCARD}), same(context), eq(builder))).thenReturn(Optional.empty());
         return unMatched;
     }
 
@@ -133,7 +126,7 @@ public class ResourceDispatcherTest {
     private ResourceRouter.RootResource rootResource(StudUriTemplate stub, ResourceRouter.ResourceMethod method) {
         ResourceRouter.RootResource matched = Mockito.mock(ResourceRouter.RootResource.class);
         when(matched.getUriTemplate()).thenReturn(stub.uriTemplate);
-        when(matched.match(same(stub.result), eq("GET"), eq(new String[]{MediaType.WILDCARD}), eq(builder))).thenReturn(Optional.of(method));
+        when(matched.match(same(stub.result), eq("GET"), eq(new String[]{MediaType.WILDCARD}), same(context), eq(builder))).thenReturn(Optional.of(method));
         return matched;
     }
 
