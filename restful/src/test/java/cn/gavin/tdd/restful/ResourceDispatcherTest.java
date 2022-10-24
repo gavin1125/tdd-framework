@@ -5,6 +5,7 @@ import jakarta.ws.rs.container.ResourceContext;
 import jakarta.ws.rs.core.GenericEntity;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.RuntimeDelegate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,7 +17,8 @@ import java.util.Optional;
 import java.util.Vector;
 
 import static org.junit.Assert.*;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +61,21 @@ public class ResourceDispatcherTest {
         OutboundResponse response = router.dispatch(request, context);
         assertSame(entity, response.getGenericEntity());
         assertEquals(200, response.getStatus());
+    }
+
+    @Test
+    public void should_return_response_object_from_resource_method() {
+        Response returnResponse = mock(OutboundResponse.class);
+        when(returnResponse.getStatus()).thenReturn(304);
+        GenericEntity entity = new GenericEntity(returnResponse, Response.class);
+
+        ResourceRouter router = new DefaultResourceRouter(runtime, List.of(
+                rootResource(matched("/users/1", result("/1")), returns(entity)),
+                rootResource(unmatched("/users/1"))));
+
+        OutboundResponse response = router.dispatch(request, context);
+
+        assertEquals(304, response.getStatus());
     }
 
     @Test
@@ -119,7 +136,7 @@ public class ResourceDispatcherTest {
     private StudUriTemplate unmatched(String path) {
         UriTemplate unMatchedUriTemplate = Mockito.mock(UriTemplate.class);
         when(unMatchedUriTemplate.match(eq(path))).thenReturn(Optional.empty());
-        return new StudUriTemplate(unMatchedUriTemplate,null);
+        return new StudUriTemplate(unMatchedUriTemplate, null);
     }
 
 
@@ -139,7 +156,7 @@ public class ResourceDispatcherTest {
     private StudUriTemplate matched(String path, UriTemplate.MatchResult result) {
         UriTemplate matchedUriTemplate = Mockito.mock(UriTemplate.class);
         when(matchedUriTemplate.match(eq(path))).thenReturn(Optional.of(result));
-        return new StudUriTemplate(matchedUriTemplate,result);
+        return new StudUriTemplate(matchedUriTemplate, result);
     }
 
     record StudUriTemplate(UriTemplate uriTemplate, UriTemplate.MatchResult result) {

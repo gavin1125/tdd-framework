@@ -9,8 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mockito;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -35,9 +34,9 @@ public class RootResourceTest {
 
     @ParameterizedTest(name = "{3}")
     @CsvSource(textBlock = """
-            GET,     /messages,           Messages.get,      Map to resource methods
-            GET,     /messages/1/content, Message.content,   Map to sub-resource method  
-            GET,     /messages/1/body,    MessageBody.get,   Map to sub-sub-resource method
+            GET,     /messages,           Messages.get,        Map to resource method
+            GET,     /messages/1/content, Message.content,     Map to sub-resource method  
+            GET,     /messages/1/body,    MessageBody.get,     Map to sub-sub-resource method
             """)
     public void should_match_resource_in_root_resource(String httpMethod, String path, String resourceMethod, String context) {
         UriInfoBuilder builder = new StubUriInfoBuilder();
@@ -77,6 +76,11 @@ public class RootResourceTest {
     }
 
     // TODO: 10/20/22 if resource class does not have a path annotation, throw illegal argument
+    @Test
+    public void should_throw_illegal_argument_exception_if_root_resource_not_have_path_annotation() {
+        assertThrows(IllegalArgumentException.class, () -> new ResourceHandler(Message.class));
+    }
+
     // TODO: 2022/10/22 Head and Options special case
 
     @Path("/messages")
@@ -85,6 +89,20 @@ public class RootResourceTest {
         @Produces(MediaType.TEXT_PLAIN)
         public String get() {
             return "messages";
+        }
+
+        @Path("/special")
+        @GET
+        public String getSpecial() {
+            return "special";
+        }
+
+        @HEAD
+        public void head(){
+        }
+
+        @OPTIONS
+        public void options(){
         }
 
         @Path("/{id:[0-9]+}")
