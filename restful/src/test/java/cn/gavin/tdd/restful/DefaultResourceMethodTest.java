@@ -25,7 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class DefaultResourceMethodTest {
-
     private CallableResourceMethods resource;
     private ResourceContext context;
     private UriInfoBuilder builder;

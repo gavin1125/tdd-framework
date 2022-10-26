@@ -102,19 +102,9 @@ class DefaultResourceMethod implements ResourceRouter.ResourceMethod {
     }
 
     private static Optional<Object> convert(Parameter parameter, List<String> values) {
-        return Optional.ofNullable(primitiveConverters.get(parameter.getType()))
-                .map(c->c.fromString(values));
+        return PrimitiveConverter.convert(parameter, values)
+                .or(() -> ConverterConstructor.convert(parameter.getType(), values.get(0)));
     }
-
-    private static Map<Type, ValueConverter<?>> primitiveConverters = Map.of(
-            int.class, singeValued(Integer::parseInt),
-            String.class, singeValued(s -> s),
-            double.class, singeValued(Double::parseDouble),
-            float.class, singeValued(Float::parseFloat),
-            short.class, singeValued(Short::parseShort),
-            byte.class, singeValued(Byte::parseByte),
-            boolean.class, singeValued(Boolean::parseBoolean)
-    );
 
     private static ValueProvider pathParam = (parameter, uriInfo) -> Optional.ofNullable(parameter.getAnnotation(PathParam.class)).map(annotation -> uriInfo.getPathParameters().get(annotation.value()));
 
@@ -137,6 +127,34 @@ class DefaultResourceMethod implements ResourceRouter.ResourceMethod {
     @Override
     public String toString() {
         return method.getDeclaringClass().getSimpleName() + "." + method.getName();
+    }
+}
+
+class PrimitiveConverter {
+    private static Map<Type, DefaultResourceMethod.ValueConverter<Object>> primitives = Map.of(
+            int.class, singeValued(Integer::parseInt),
+            String.class, singeValued(s -> s),
+            double.class, singeValued(Double::parseDouble),
+            float.class, singeValued(Float::parseFloat),
+            short.class, singeValued(Short::parseShort),
+            byte.class, singeValued(Byte::parseByte),
+            boolean.class, singeValued(Boolean::parseBoolean)
+    );
+
+    public static Optional<Object> convert(Parameter parameter, List<String> values) {
+        return Optional.ofNullable(primitives.get(parameter.getType()))
+                .map(c -> c.fromString(values));
+    }
+}
+
+class ConverterConstructor {
+    public static Optional<Object> convert(Class<?> converter, String value) {
+        try {
+            return Optional.ofNullable(converter.getConstructor(String.class).newInstance(value));
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException |
+                 NoSuchMethodException e) {
+            return Optional.empty();
+        }
     }
 }
 
