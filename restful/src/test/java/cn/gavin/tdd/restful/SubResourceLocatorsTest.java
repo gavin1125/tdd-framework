@@ -74,5 +74,4 @@ public class SubResourceLocatorsTest {
             return "content";
         }
     }
-
 }
