@@ -5,6 +5,7 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.container.ResourceContext;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.GenericEntity;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.UriInfo;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.eq;
 
 public class DefaultResourceMethodTest {
     private CallableResourceMethods resource;
@@ -32,6 +34,8 @@ public class DefaultResourceMethodTest {
     private MultivaluedHashMap<String, String> parameters;
 
     private LastCall lastCall;
+
+    SomeServiceInContext service;
 
     record LastCall(String name, List<Object> arguments) {
     }
@@ -52,11 +56,13 @@ public class DefaultResourceMethodTest {
         builder = Mockito.mock(UriInfoBuilder.class);
         uriInfo = Mockito.mock(UriInfo.class);
         parameters = new MultivaluedHashMap<>();
+        service = Mockito.mock(SomeServiceInContext.class);
 
         Mockito.when(builder.getLastMatchedResource()).thenReturn(resource);
         Mockito.when(builder.createUriInfo()).thenReturn(uriInfo);
         Mockito.when(uriInfo.getPathParameters()).thenReturn(parameters);
         Mockito.when(uriInfo.getQueryParameters()).thenReturn(parameters);
+        Mockito.when(context.getResource(eq(SomeServiceInContext.class))).thenReturn(service);
     }
 
     private static String getMethodName(String name, List<? extends Class<?>> classStream) {
@@ -93,7 +99,7 @@ public class DefaultResourceMethodTest {
     }
 
     @TestFactory
-    public List<DynamicTest> injectableTypes() {
+    public List<DynamicTest> inject_convertable_types() {
         List<DynamicTest> tests = new ArrayList<>();
 
         List<InjectableTypeTestCase> typeCases = List.of(
@@ -104,7 +110,8 @@ public class DefaultResourceMethodTest {
                 new InjectableTypeTestCase(short.class, "128", (short) 128),
                 new InjectableTypeTestCase(byte.class, "42", (byte) 42),
                 new InjectableTypeTestCase(boolean.class, "true", true),
-                new InjectableTypeTestCase(BigDecimal.class, "12345", new BigDecimal("12345"))
+                new InjectableTypeTestCase(BigDecimal.class, "12345", new BigDecimal("12345")),
+                new InjectableTypeTestCase(Converter.class, "Factory", Converter.Factory)
         );
 
         List<String> paramTypes = List.of("getPathParam", "getQueryParam");
@@ -114,6 +121,23 @@ public class DefaultResourceMethodTest {
                 tests.add(DynamicTest.dynamicTest("should inject " + testCase.type.getSimpleName()
                         + " to " + type, () -> verifyResourceMethodCalled(type, testCase.type, testCase.string, testCase.value)));
             }
+
+        return tests;
+    }
+
+    @TestFactory
+    public List<DynamicTest> inject_context_object() {
+        List<DynamicTest> tests = new ArrayList<>();
+        List<InjectableTypeTestCase> typeCases = List.of(
+                new InjectableTypeTestCase(SomeServiceInContext.class, "N/A", service),
+                new InjectableTypeTestCase(ResourceContext.class, "N/A", context),
+                new InjectableTypeTestCase(UriInfo.class, "N/A", uriInfo)
+        );
+
+        for (InjectableTypeTestCase testCase : typeCases) {
+            tests.add(DynamicTest.dynamicTest("should inject " + testCase.type.getSimpleName()
+                    + " to getContext", () -> verifyResourceMethodCalled("getContext", testCase.type, testCase.string, testCase.value)));
+        }
 
         return tests;
     }
@@ -128,13 +152,8 @@ public class DefaultResourceMethodTest {
         assertEquals(List.of(paramValue), lastCall.arguments);
     }
 
-    // TODO: 10/24/22 using default converters for path, query, matrix,(uri) form ,header, cookie (request)
-    // TODO: 10/24/22 default converters for class with converter constructor
-    // TODO: 10/24/22 default converters for class with converter factory 
-    // TODO: 10/24/22 default converters for List, Set ,SortSet 
-    // TODO: 10/24/22 injection - get injectable from resource context 
-    // TODO: 10/24/22 injection - can inject resource context itself 
-    // TODO: 10/24/22 injection - can inject uri info built from uri info builder
+    // TODO: 10/24/22 using default converters for matrix,(uri) form ,header, cookie (request)
+    // TODO: 10/24/22 default converters for List, Set ,SortSet, Array(primitive)
 
     interface CallableResourceMethods {
         @POST
@@ -171,6 +190,9 @@ public class DefaultResourceMethodTest {
         String getPathParam(@PathParam("param") BigDecimal value);
 
         @GET
+        String getPathParam(@PathParam("param") Converter value);
+
+        @GET
         String getQueryParam(@QueryParam("param") String value);
 
         @GET
@@ -194,5 +216,23 @@ public class DefaultResourceMethodTest {
         @GET
         String getQueryParam(@QueryParam("param") BigDecimal value);
 
+        @GET
+        String getQueryParam(@QueryParam("param") Converter value);
+
+        @GET
+        String getContext(@Context SomeServiceInContext service);
+
+        @GET
+        String getContext(@Context ResourceContext context);
+
+        @GET
+        String getContext(@Context UriInfo context);
     }
+}
+
+enum Converter {
+    Primitive, Constructor, Factory
+}
+
+interface SomeServiceInContext {
 }
